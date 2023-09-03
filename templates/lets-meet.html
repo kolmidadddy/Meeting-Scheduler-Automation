@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="center">
+    <h1>Schedule A Meeting</h1>
+</div>
+
+{% if error_message %}
+  <div class="alert alert-danger">
+    {{ error_message }}
+  </div>
+{% endif %}
+
+<div class="card-wrapper">
+    <!-- Card 1 -->
+    <div class="card">
+        <h1 class="center">Select User Calendar</h1>
+        <div class="center">
+            <form method="post" action="/user/lets-meet">
+                {% for user in all_users %}
+                    <input type="checkbox" id="{{ user.email }}" name="selected_users" value="{{ user.email }}">
+                    <label for="{{ user.email }}">{{ user.collection_name }}</label><br>
+                {% endfor %}
+                <label for="date">Select a date:</label>
+                <input type="date" id="date" name="date"><br>
+
+                <input type="submit" value="Select Users and Find Slots">
+            </form>
+        </div>
+    </div>
+
+    <!-- Card 3 -->
+    <div class="card">
+      <h1 class="center">User Preferences</h1>
+      {% for email, preference_slots in preference_slots_by_user.items() %}
+          <div class="preference-slot">
+              <h2>Preference slots for {{ email }}</h2>
+              <ul class="events-list">
+                  {% for start, end in preference_slots %}
+                      <li>
+                          <strong>Start Time:</strong> {{ start }}
+                          <strong>End Time:</strong> {{ end }}
+                      </li>
+                  {% endfor %}
+              </ul>
+          </div>
+      {% endfor %}
+  </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form[action="/user/lets-meet"]');
+    form.addEventListener('submit', function(event) {
+      const checkboxes = form.querySelectorAll('input[name="selected_users"]:checked');
+      if (checkboxes.length < 1) {
+        alert('Please select at least one user.');
+        event.preventDefault();
+      }
+    });
+  });
+</script>
+{% endblock %}

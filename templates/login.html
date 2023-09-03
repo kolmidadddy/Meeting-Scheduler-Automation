@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+    <div class="card-wrapper">
+        <div class= "card">
+
+            <h1 class="center">Login</h1>
+
+            <form action="/user/login" method="post">
+
+                <label for="email">Email:</label><br>
+                <input type="email" id="email" name="email"class="field" required>
+                
+                <label for="password">Password:</label><br>
+                <input type="password" id="password" name="password" class="field" required>
+
+                <p class="error error--hidden"></p>
+                
+                <input type="submit" value="Login" class="btn"> 
+            </form>
+
+            <!-- Add this section for the "Don't have an account yet? Create a new account" link -->
+            <div class="center signup-redirect">
+                <p>Don't have an account yet? <a href="/">Create a new account.</a></p>
+            </div>
+
+        </div>
+
+    </div>
+
+{% endblock %}
