@@ -44,7 +44,6 @@ else:
     app.logger.error("Failed to connect to MongoDB")
     initialize_scheduler(False)  # Do not initialize scheduler
     exit(1)
-    
 
 # *Decorators
 def login_required(f):

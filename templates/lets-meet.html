@@ -14,49 +14,100 @@
 <div class="card-wrapper">
     <!-- Card 1 -->
     <div class="card">
-        <h1 class="center">Select User Calendar</h1>
+        <h1 class="center">Enter Candidate's Email Addresses</h1>
         <div class="center">
             <form method="post" action="/user/lets-meet">
-                {% for user in all_users %}
-                    <input type="checkbox" id="{{ user.email }}" name="selected_users" value="{{ user.email }}">
-                    <label for="{{ user.email }}">{{ user.collection_name }}</label><br>
-                {% endfor %}
-                <label for="date">Select a date:</label>
-                <input type="date" id="date" name="date"><br>
+                <div id="emailDiv">
+                    <input type="email" name="email" placeholder="Enter email" required>
+                </div>
+                <button type="button" class="button-52" onclick="addEmailField()">Add another email</button><br><br>
+                
+                <label for="duration">Meeting Duration (hours):</label>
+                <input type="number" id="duration" name="duration" min="1" value="1" required><br><br>
 
-                <input type="submit" value="Select Users and Find Slots">
+                <!-- Display added emails -->
+                <div id="addedEmails"></div>
+
+                <input type="submit" class="button-85" value="Search Users and Find Slots">
             </form>
         </div>
     </div>
-
-    <!-- Card 3 -->
+    
+    <!-- Card 2: Displaying User's Available Slots -->
     <div class="card">
-      <h1 class="center">User Preferences</h1>
-      {% for email, preference_slots in preference_slots_by_user.items() %}
-          <div class="preference-slot">
-              <h2>Preference slots for {{ email }}</h2>
-              <ul class="events-list">
-                  {% for start, end in preference_slots %}
-                      <li>
-                          <strong>Start Time:</strong> {{ start }}
-                          <strong>End Time:</strong> {{ end }}
-                      </li>
-                  {% endfor %}
-              </ul>
-          </div>
-      {% endfor %}
-  </div>
+        <h1 class="center">Available Slots</h1>
+        {% if user_slots and user_slots|length > 0 %}
+            {% for email, slots in user_slots.items() %}
+            <div class="slot-list">
+                <h3>{{ email }}</h3>
+                <ul>
+                    {% for slot in slots %}
+                    <li>Start Time: {{ slot['start_time'] }}, End Time: {{ slot['end_time'] }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        {% elif not user_slots and not meeting_slot %}
+            <p class="center">No available slots to show. Please enter emails and set meeting duration.</p>
+        {% endif %}
 
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    const form = document.querySelector('form[action="/user/lets-meet"]');
-    form.addEventListener('submit', function(event) {
-      const checkboxes = form.querySelectorAll('input[name="selected_users"]:checked');
-      if (checkboxes.length < 1) {
-        alert('Please select at least one user.');
-        event.preventDefault();
-      }
-    });
-  });
-</script>
-{% endblock %}
+        <!-- Display the suggested meeting slot -->
+        {% if meeting_slot %}
+            <h2 class="center">{{ meeting_slot }}</h2>
+            <form method="post" action="/user/lets-meet">
+                <input type="hidden" name="after_time" value="{{ meeting_slot.split(' to ')[1] }}"> 
+                <!-- Hidden input fields for emails -->
+                {% for email in emails %}
+                    <input type="hidden" name="email" value="{{ email }}">
+                {% endfor %}
+                <button type="submit" class="button-85">Find Next Slot</button>
+            </form>
+        {% endif %}
+
+
+
+
+    <script>
+        function addEmailField() {
+            var newEmailInput = document.createElement("input");
+            newEmailInput.type = "email";
+            newEmailInput.name = "email";
+            newEmailInput.placeholder = "Enter email";
+            newEmailInput.onkeyup = updateAddedEmails;  // Call function to update displayed emails when email is typed
+            document.getElementById("emailDiv").appendChild(newEmailInput);
+        }
+    
+        function updateAddedEmails() {
+            var emailInputs = document.querySelectorAll('input[name="email"]');
+            var addedEmailsDiv = document.getElementById('addedEmails');
+            addedEmailsDiv.innerHTML = '<h3>Added Emails:</h3>';
+            emailInputs.forEach(input => {
+                if (input.value) {
+                    var emailPara = document.createElement("p");
+                    emailPara.textContent = input.value;
+                    addedEmailsDiv.appendChild(emailPara);
+                }
+            });
+        }
+    
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form[action="/user/lets-meet"]');
+            form.addEventListener('submit', function(event) {
+                const emailInputs = form.querySelectorAll('input[name="email"]');
+                let validEmails = 0;
+                
+                emailInputs.forEach(input => {
+                    if(input.value) validEmails++;
+                });
+    
+                if (validEmails < 1) {
+                    alert('Please enter at least one email.');
+                    event.preventDefault();
+                }
+            });
+    
+            // Initialize the displayed emails list
+            updateAddedEmails();
+        });
+    </script>
+    {% endblock %}

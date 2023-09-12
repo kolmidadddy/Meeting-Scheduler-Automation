@@ -1,11 +1,10 @@
-from datetime import datetime, time, timedelta
 import logging
 import os
+import pymongo
 from dateutil.parser import parse
 from dotenv import find_dotenv, load_dotenv
 from flask import Blueprint, request, render_template
 from pymongo import MongoClient
-import pymongo
 
 
 # Initialize logging
@@ -49,7 +48,6 @@ def signup():
     else:
         return render_template('signup.html')
     
-    
 @user_bp.route('/user/signout')
 def signout():
     from user.models import User
@@ -63,154 +61,59 @@ def login():
     else:
         return render_template('login.html')
 
-# Reusable Function to parse datetime strings
-def parse(time_str):
-    try:
-        modified_str = time_str.replace('T', ' ').split('+')[0]
-        if ' ' in modified_str:
-            return datetime.strptime(modified_str, '%Y-%m-%d %H:%M:%S')
+@user_bp.route('/user/lets-meet', methods=['GET','POST'])
+def lets_meet():
+    from datetime import datetime, timedelta
+    from dateutil.parser import parse
+
+    def find_soonest_slot(busy_slots, duration, after_time=None):
+        merged_slots = []
+        for slots in busy_slots.values():
+            merged_slots.extend(slots)
+        merged_slots.sort(key=lambda x: x['start_time'])
+
+        current_time = datetime.utcnow()
+        if after_time:
+            current_time = max(current_time, parse(after_time))
+
+        for i in range(len(merged_slots) - 1):
+            gap = merged_slots[i+1]['start_time'] - merged_slots[i]['end_time']
+            if gap >= duration and current_time <= merged_slots[i]['end_time']:
+                return merged_slots[i]['end_time'], merged_slots[i]['end_time'] + duration
+        
+        # If no slot is found within the busy times, return the time after the last busy slot
+        if merged_slots:
+            return merged_slots[-1]['end_time'], merged_slots[-1]['end_time'] + duration
         else:
-            return datetime.strptime(modified_str, '%Y-%m-%d')
-    except Exception as e:
-        return None
-    
-
-# Function to convert preference slots to datetime objects
-def convert_to_datetime(preference_slots, day_start):
-    try:
-        return [
-            (
-                day_start.replace(hour=int(start_hr), minute=int(start_min)),
-                day_start.replace(hour=int(end_hr), minute=int(end_min))
-            )
-            for start_str, end_str in (slot.split('-') for slot in preference_slots)
-            for start_hr, start_min in (start_str.split(':'))
-            for end_hr, end_min in (end_str.split(':'))
-        ]
-    except Exception as e:
-        return []
-
-    
-# Function to find available slots
-def find_available_slots(busy_slots, day_start, day_end, preference_slots):
-    available_slots = []
-    
-    # Convert preference slots to datetime objects
-    preference_slots_dt = []
-    for slot in preference_slots:
-        start_str, end_str = slot.split("-")
-        start_hr, start_min = map(int, start_str.split(":"))
-        end_hr, end_min = map(int, end_str.split(":"))
-
-        preference_slots_dt.append((
-            day_start.replace(hour=start_hr, minute=start_min),
-            day_start.replace(hour=end_hr, minute=end_min)
-        ))
-
-    for pref_start, pref_end in preference_slots_dt:
-        current_start = max(day_start, pref_start)
-        current_end = None
-
-        for time_str, action in sorted(busy_slots):
-            time = datetime.fromisoformat(time_str)
-
-            if time < pref_start or time > pref_end:
-                continue
-
-            if action == 'start':
-                current_end = max(current_end, time) if current_end else time
-            elif action == 'end':
-                current_start = max(current_start, time)
-                if current_end and current_start >= current_end:
-                    slot_start = current_end
-                    slot_end = current_start
-                    if slot_end > slot_start:
-                        available_slots.append((slot_start, slot_end))
-                    current_end = None
-
-        if current_start < pref_end:
-            slot_start = max(current_start, pref_start)
-            slot_end = min(pref_end, day_end)
-            if slot_end > slot_start:
-                available_slots.append((slot_start, slot_end))
-
-    return available_slots
-
-# Route to schedule meeting
-@user_bp.route('/user/lets-meet', methods=['GET', 'POST'])
-def schedule_meeting():
-    client = MongoClient(CONNECTION_STRING) 
-    db = client.calendar_db
-    users_collection = db.users
-
-    # Fetch only a subset of users for pagination
-    all_users = list(users_collection.find({}).limit(50))
-
-    upcoming_events = {}
-    available_slots_by_user = {}
-    preference_slots_by_user = {}
-    error_message = None
+            return current_time, current_time + duration
 
     if request.method == 'POST':
-        try:
-            selected_user_emails = request.form.getlist("selected_users")
-            selected_date = request.form.get("date")
+        # Getting multiple email inputs from the form
+        emails = request.form.getlist('email')
 
-            if not selected_user_emails:
-                error_message = "Please select at least one user."
-            elif not selected_date:
-                error_message = "Please select a date."
-            else:
-                dt = parse(selected_date)
-                if dt is None:
-                    raise ValueError("Invalid date format")
+        # Assuming a default meeting duration of 1 hour. 
+        duration = timedelta(hours=int(request.form.get('duration', 1)))
 
-                dt_start = datetime.combine(dt, time.min)
-                dt_end = datetime.combine(dt, time.max)
+        if not emails:
+            return render_template('lets-meet.html', error_message="No email provided.")
 
-                for email in selected_user_emails:
-                    user_info = users_collection.find_one({"email": email})
-                    if not user_info:
-                        logging.warning(f"No user found for email: {email}")
-                        continue
+        # Create a MongoDB client once and reuse it
+        client = MongoClient(CONNECTION_STRING)
+        db = client['calendar_db']
+        user_collection = db['users']
 
-                    preference_slots = user_info.get("preference_slots", [])
-                    preference_slots_dt = convert_to_datetime(preference_slots, dt_start)
-                    preference_slots_by_user[email] = preference_slots
+        # Fetching busy slots of the users based on the email addresses
+        user_slots = {}
+        for email in emails:
+            user_data = user_collection.find_one({"email": email})
+            if user_data and 'busy_slots' in user_data:
+                user_slots[email] = user_data['busy_slots']
 
-                    events_collection = db.get_collection(user_info.get("collection_name", ""))
-                    if events_collection is None:
-                        logging.error(f"No collection found for user {email}")
-                        continue
+        # Check if we are looking for a slot after a certain time
+        after_time = request.form.get('after_time', None)
+        start, end = find_soonest_slot(user_slots, duration, after_time=after_time)
+        meeting_slot = f"{start.strftime('%A %I%p, %d/%m/%Y')} to {end.strftime('%A %I%p, %d/%m/%Y')}"
 
-                    cursor = events_collection.find(
-                        {"start_time": {"$gte": dt_start}, "end_time": {"$lte": dt_end}}
-                    ).sort("start_time", 1)
-
-                    events = list(cursor)
-                    upcoming_events[email] = events
-
-                    busy_slots_for_user = [
-                        (event['start_time'], 'start') for event in events
-                    ] + [
-                        (event['end_time'], 'end') for event in events
-                    ]
-
-                    available_slots = find_available_slots(busy_slots_for_user, dt_start, dt_end, preference_slots_dt)
-                    available_slots_by_user[email] = [(str(start), str(end)) for start, end in available_slots]
-
-        except ValueError as ve:
-            logging.error(f"Value error: {ve}")
-            error_message = "Invalid input."
-        except Exception as e:
-            logging.error(f"An unexpected error occurred: {e}")
-            error_message = "An unexpected error occurred."
-
-    return render_template(
-        'lets-meet.html',
-        all_users=all_users,
-        upcoming_events=upcoming_events,
-        available_slots_by_user=available_slots_by_user,
-        preference_slots_by_user=preference_slots_by_user,
-        error_message=error_message
-    )
+        return render_template('lets-meet.html', user_slots=user_slots, meeting_slot=meeting_slot, emails=emails)
+    else:
+        return render_template('lets-meet.html', user_slots={}, meeting_slot=None, emails=[])
